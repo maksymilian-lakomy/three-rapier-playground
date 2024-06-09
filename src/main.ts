@@ -18,7 +18,14 @@ let physicsWorld: RAPIER.World;
 let renderer: THREE.WebGLRenderer;
 let stats: Stats;
 
+let directionalLightHelper: THREE.DirectionalLightHelper;
+
 let pane: Pane;
+
+const params = {
+    directionalLightHelperVisible: false,
+    rapierDebugVisible: false
+}
 
 let animationId: number | null = null;
 
@@ -47,6 +54,12 @@ async function init(): Promise<void> {
 
     pane = new Pane({title: 'Debug'});
 
+    const rapierDebugVisibleBinding = pane.addBinding(params, 'rapierDebugVisible')
+    rapierDebugVisibleBinding.on('change', () => physicsWorldDebug.visible = params.rapierDebugVisible);
+
+    const directionalLightHelperVisibleBinding = pane.addBinding(params, 'directionalLightHelperVisible')
+    directionalLightHelperVisibleBinding.on('change', () => directionalLightHelper.visible = params.directionalLightHelperVisible);
+
     freeRoamCamera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 1, 100);
     freeRoamCamera.position.set(0, 4, 10);
     freeRoamCamera.lookAt(0, 1, 0);
@@ -60,11 +73,14 @@ async function init(): Promise<void> {
     physicsWorld.timestep = 1 / PHYSICS_UPDATE_PER_SECOND;
 
     physicsWorldDebug = new THREE.Group();
+    physicsWorldDebug.visible = params.rapierDebugVisible;
     scene.add(physicsWorldDebug);
 
     const level = (await new GLTFLoader().loadAsync('/level_1.glb')).scene;
     level.traverse(object3D => {
         if (object3D instanceof THREE.Mesh) {
+            object3D.castShadow = true;
+            object3D.receiveShadow = true;
 
             const positionAttributes = object3D.geometry.attributes['position'].array;
             const indexes = object3D.geometry.index?.array;
@@ -89,15 +105,37 @@ async function init(): Promise<void> {
 
     scene.add(level);
 
+    const directionalLight = new THREE.DirectionalLight( 0xffffff, 1 );
+    directionalLight.position.set( 10, 10,  10 );
+    directionalLight.castShadow = true;
+    directionalLight.shadow.camera.top = 128;
+    directionalLight.shadow.camera.bottom = -128;
+    directionalLight.shadow.camera.left = -128;
+    directionalLight.shadow.camera.right = 128;
+    directionalLight.shadow.camera.near = 0.1;
+    directionalLight.shadow.camera.far = 1000;
+
+    directionalLight.shadow.mapSize.width = 2048;
+    directionalLight.shadow.mapSize.height = 2048;
+
+    scene.add( directionalLight );
+
+    directionalLightHelper = new THREE.DirectionalLightHelper( directionalLight );
+    directionalLightHelper.visible = params.rapierDebugVisible;
+    scene.add(directionalLightHelper);
+
     renderer = new THREE.WebGLRenderer({antialias: true});
     renderer.setPixelRatio(window.devicePixelRatio);
     renderer.setSize(window.innerWidth, window.innerHeight);
     renderer.shadowMap.enabled = true;
+    renderer.shadowMap.type = THREE.PCFSoftShadowMap;
     renderer.toneMapping = THREE.ACESFilmicToneMapping;
 
     container.appendChild(renderer.domElement);
 
     orbitControls = new OrbitControls(freeRoamCamera, renderer.domElement);
+    orbitControls.minDistance = 10;
+    orbitControls.maxDistance = 75;
     orbitControls.enableDamping = true;
 
     stats = new Stats();
@@ -106,12 +144,22 @@ async function init(): Promise<void> {
     window.addEventListener('resize', onWindowResize);
     document.addEventListener('visibilitychange', onDocumentVisibilityChange);
 
+    player();
+
     animationId = requestAnimationFrame(animate);
 }
 
 let startTimeMs: number | null = null;
 let elapsedTimeMs: number | null = null;
 let elapsedTickCounter: number = 0;
+
+let playerEuler = new THREE.Euler(0, 0,0);
+
+function player(): void {
+    playerEuler.set(
+
+    )
+}
 
 function animate(timeMs: number): void {
     stats.begin();
