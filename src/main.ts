@@ -290,7 +290,7 @@ function updatePlayer(deltaTimeMs: number): void {
         playerInput.left - playerInput.right,
         0,
         playerInput.forward - playerInput.backward
-    ).normalize().multiplyScalar(PLAYER_SPEED).applyQuaternion(nextQuaternion).divideScalar( deltaTimeMs);
+    ).normalize().multiplyScalar(PLAYER_SPEED).applyQuaternion(nextQuaternion).divideScalar(deltaTimeMs);
 
     // This should happen when character is grounded and not sliding?
     if (characterController.computedGrounded()) {
@@ -353,69 +353,27 @@ function animate(timeMs: number): void {
     animationId = requestAnimationFrame(animate);
 }
 
-let debugLineGeometries: THREE.BufferGeometry[] = [];
+let debugLineSegments: THREE.LineSegments;
 
 function updateRapier(): void {
     physicsWorld.step();
 
-    // THIS DEBUG CAN BECOME VERY SLOW ON LARGE MESHES
-    physicsWorldDebug.clear();
+    if (!debugLineSegments) {
+        const material = new THREE.LineBasicMaterial({
+            color: 0xffffff,
+            vertexColors: true
+        });
 
-    let debugLineMaterials = [];
+        const geometry = new THREE.BufferGeometry();
 
-    debugLineGeometries.forEach(it => it.dispose());
-    debugLineGeometries = [];
+        debugLineSegments = new THREE.LineSegments(geometry, material);
+        physicsWorldDebug.add(debugLineSegments);
+    }
 
     const {vertices, colors} = physicsWorld.debugRender();
 
-    for (let i = 0; i < colors.length / 8; i += 1) {
-        debugLineMaterials.push(getLineMaterial(
-            colors[(i * 8)],
-            colors[(i * 8) + 1],
-            colors[(i * 8) + 2]
-        ));
-    }
-
-    for (let i = 0; i < vertices.length / 6; i += 1) {
-        const points = [
-            new THREE.Vector3(vertices[i * 6], vertices[(i * 6) + 1], vertices[(i * 6) + 2]),
-            new THREE.Vector3(vertices[(i * 6) + 3], vertices[(i * 6) + 4], vertices[(i * 6) + 5])
-        ];
-
-        const geometry = new THREE.BufferGeometry().setFromPoints(points);
-        debugLineGeometries.push(geometry);
-
-        const line = new THREE.Line(geometry, debugLineMaterials[i]);
-
-        physicsWorldDebug.add(line);
-    }
-}
-
-const cachedLineMaterials = new Map<string, THREE.LineBasicMaterial>();
-
-function getLineMaterial(r: number, g: number, b: number): THREE.LineBasicMaterial {
-    const colorRepresentation = {
-        r: Math.round(r * 255),
-        g: Math.round(g * 255),
-        b: Math.round(b * 255)
-    };
-
-    const cacheKey = `${colorRepresentation.r}-${colorRepresentation.g}-${colorRepresentation.b}`;
-
-    let material = cachedLineMaterials.get(cacheKey);
-
-    if (!material) {
-        material = new THREE.LineBasicMaterial({
-            color: new THREE.Color(
-                colorRepresentation.r, colorRepresentation.g, colorRepresentation.b
-            )
-        });
-
-        cachedLineMaterials.set(cacheKey, material);
-    }
-
-
-    return material;
+    debugLineSegments.geometry.setAttribute('position', new THREE.BufferAttribute(vertices, 3))
+    debugLineSegments.geometry.setAttribute('color', new THREE.BufferAttribute(colors, 4))
 }
 
 function updateThree(deltaTimeMs: number): void {
