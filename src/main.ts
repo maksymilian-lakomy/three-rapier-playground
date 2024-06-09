@@ -6,6 +6,8 @@ import Stats from 'stats.js';
 import {GLTFLoader, OrbitControls, RGBELoader} from "three-stdlib";
 import {Pane} from "tweakpane";
 
+let container: HTMLElement;
+
 let freeRoamCamera: THREE.PerspectiveCamera;
 let orbitControls: OrbitControls;
 
@@ -34,9 +36,14 @@ async function init(): Promise<void> {
     hdrMap.magFilter = THREE.LinearFilter;
     hdrMap.needsUpdate = true;
 
-    const container = document.getElementById("container");
+    container = (function () {
+        const container = document.getElementById("container");
 
-    if (!container) throw new Error('Could not get element with id: "container"!');
+        if (!container) throw new Error('Could not get element with id: "container"!');
+
+        return container;
+    })()
+
 
     pane = new Pane({title: 'Debug'});
 
@@ -169,7 +176,7 @@ function animateRapier(): void {
     }
 }
 
-const cachedLineMaterials  = new Map<string, THREE.LineBasicMaterial>();
+const cachedLineMaterials = new Map<string, THREE.LineBasicMaterial>();
 
 function getLineMaterial(r: number, g: number, b: number): THREE.LineBasicMaterial {
     const colorRepresentation = {
