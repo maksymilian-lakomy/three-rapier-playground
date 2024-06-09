@@ -296,15 +296,16 @@ function updatePlayer(deltaTimeMs: number): void {
     if (characterController.computedGrounded()) {
         groundedTimer = GROUNDED_TIMER_DEFAULT_VALUE;
         verticalMovement = VERTICAL_MOVEMENT;
-
-        if (playerInput.jump) {
-            verticalMovement = 0.25;
-            playerInput.jump = 0;
-        }
     }
 
     if (groundedTimer > 0) {
         groundedTimer = Math.max(groundedTimer - (deltaTimeMs / 1000), 0);
+
+        if (playerInput.jump > 0) {
+            verticalMovement = 0.25;
+            groundedTimer = 0;
+            playerInput.jump = 0;
+        }
     }
 
     movementVector.setY(verticalMovement);
