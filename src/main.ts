@@ -13,6 +13,8 @@ let physicsWorld: RAPIER.World;
 let renderer: THREE.WebGLRenderer;
 let stats: Stats;
 
+let animationId: number | null = null;
+
 const GRAVITY_VECTOR = new THREE.Vector3(0, -9.81, 0);
 const PHYSICS_UPDATE_PER_SECOND = 60;
 
@@ -52,11 +54,14 @@ async function init(): Promise<void> {
     container.appendChild(renderer.domElement);
 
     orbitControls = new OrbitControls(freeRoamCamera, renderer.domElement);
+    orbitControls.enableDamping = true;
+    orbitControls.autoRotate = true;
 
     stats = new Stats();
     container.appendChild(stats.dom);
 
     window.addEventListener('resize', onWindowResize);
+    document.addEventListener('visibilitychange', onDocumentVisibilityChange);
 
     let geometry = new THREE.TorusKnotGeometry(18, 8, 200, 40, 1, 3);
     let material = new THREE.MeshStandardMaterial({
@@ -69,11 +74,11 @@ async function init(): Promise<void> {
     torusMesh.scale.set(0.025, 0.025, 0.025);
     scene.add(torusMesh);
 
-    requestAnimationFrame(animate);
+    animationId = requestAnimationFrame(animate);
 }
 
 let startTimeMs: number | null = null;
-let elapsedTimeMs: number = 0;
+let elapsedTimeMs: number | null = null;
 let elapsedTickCounter: number = 0;
 
 function animate(timeMs: number): void {
@@ -88,18 +93,44 @@ function animate(timeMs: number): void {
     )
 
     for (let tick = elapsedTickCounter; tick < tickCounter; tick++) {
-        // EVERYTHING PHYSICS RELATED SHOULD HAPPEN HERE
-        physicsWorld.step();
+        animateRapier();
     }
 
-    orbitControls.update();
-    renderer.render(scene, freeRoamCamera);
+    const deltaTimeMs = elapsedTimeMs !== null ? timeMs - elapsedTimeMs : 0;
+    animateThree(deltaTimeMs);
 
     stats.end();
 
     elapsedTickCounter = tickCounter;
     elapsedTimeMs = timeMs;
-    requestAnimationFrame(animate);
+    animationId = requestAnimationFrame(animate);
+}
+
+function animateRapier(): void {
+    physicsWorld.step();
+}
+
+function animateThree(_: number): void {
+    orbitControls.update();
+    renderer.render(scene, freeRoamCamera);
+}
+
+function clearAnimationAndTimings(): void {
+    animationId = null;
+    startTimeMs = null;
+    elapsedTimeMs = null;
+    elapsedTickCounter = 0;
+}
+
+function onDocumentVisibilityChange(): void {
+    if (document.hidden && animationId !== null) {
+        cancelAnimationFrame(animationId);
+        clearAnimationAndTimings();
+        console.log('Animation paused');
+    } else {
+        animationId = requestAnimationFrame(animate);
+        console.log('Animation resumed');
+    }
 }
 
 function onWindowResize(): void {
