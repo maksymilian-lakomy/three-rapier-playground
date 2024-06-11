@@ -8,7 +8,7 @@ await RAPIER.init();
 
 const PLAYGROUND = await initPlayground();
 
-let playerInput = {
+const playerInput = {
   forward: 0,
   backward: 0,
   left: 0,
