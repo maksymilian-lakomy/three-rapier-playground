@@ -5,7 +5,6 @@ import { toVector3 } from './utils.ts';
 import { GRAVITY_VECTOR } from './gravity.ts';
 
 await RAPIER.init();
-
 const PLAYGROUND = await initPlayground();
 
 const playerInput = {
@@ -40,7 +39,12 @@ function createPlayer(): void {
   // THREE SETUP
   playerGroup = new THREE.Group();
 
-  playerCamera = new THREE.PerspectiveCamera(85, window.innerWidth / window.innerHeight, 0.01, 100);
+  playerCamera = new THREE.PerspectiveCamera(
+    85,
+    window.innerWidth / window.innerHeight,
+    0.01,
+    100,
+  );
   playerCamera.position.set(0, PLAYER_EVE_LEVEL, 0);
 
   playerGroup.add(playerCamera);
@@ -48,38 +52,48 @@ function createPlayer(): void {
   PLAYGROUND.activeCamera = playerCamera;
   PLAYGROUND.scene.add(playerGroup);
 
-// RAPIER SETUP
-  const colliderDesc = RAPIER.ColliderDesc.cylinder(PLAYER_COLLIDER_HEIGHT / 2, PLAYER_COLLIDER_RADIUS);
+  // RAPIER SETUP
+  const colliderDesc = RAPIER.ColliderDesc.cylinder(
+    PLAYER_COLLIDER_HEIGHT / 2,
+    PLAYER_COLLIDER_RADIUS,
+  );
   colliderDesc.setTranslation(0, PLAYER_COLLIDER_HEIGHT / 2, 0);
 
   playerCollider = PLAYGROUND.physicsWorld.createCollider(colliderDesc);
 
-  characterController = PLAYGROUND.physicsWorld.createCharacterController(PLAYER_OFFSET);
+  characterController =
+    PLAYGROUND.physicsWorld.createCharacterController(PLAYER_OFFSET);
   characterController.setMaxSlopeClimbAngle(5 * THREE.MathUtils.DEG2RAD);
   characterController.setApplyImpulsesToDynamicBodies(false);
   characterController.enableAutostep(0.25, 0.2, true);
   characterController.enableSnapToGround(0.25);
 
-// EVENTS SETUP
+  // EVENTS SETUP
   PLAYGROUND.canvas.addEventListener('click', () => {
     if (PLAYGROUND.activeCamera !== playerCamera) return;
 
     PLAYGROUND.canvas.requestPointerLock();
   });
 
-  PLAYGROUND.canvas.addEventListener('pointermove', event => {
+  PLAYGROUND.canvas.addEventListener('pointermove', (event) => {
     // Mention flipping sides
-    playerEuler.x += (event.movementY / PLAYGROUND.canvas.clientHeight) * PLAYER_MOUSE_SENSITIVITY * THREE.MathUtils.DEG2RAD;
+    playerEuler.x +=
+      (event.movementY / PLAYGROUND.canvas.clientHeight) *
+      PLAYER_MOUSE_SENSITIVITY *
+      THREE.MathUtils.DEG2RAD;
     playerEuler.x = THREE.MathUtils.clamp(
       playerEuler.x,
       -80 * THREE.MathUtils.DEG2RAD,
       80 * THREE.MathUtils.DEG2RAD,
     );
 
-    playerEuler.y -= (event.movementX / PLAYGROUND.canvas.clientWidth) * PLAYER_MOUSE_SENSITIVITY * THREE.MathUtils.DEG2RAD;
+    playerEuler.y -=
+      (event.movementX / PLAYGROUND.canvas.clientWidth) *
+      PLAYER_MOUSE_SENSITIVITY *
+      THREE.MathUtils.DEG2RAD;
   });
 
-  window.addEventListener('keydown', event => {
+  window.addEventListener('keydown', (event) => {
     if (event.repeat) return;
 
     switch (event.code) {
@@ -101,7 +115,7 @@ function createPlayer(): void {
     }
   });
 
-  window.addEventListener('keyup', event => {
+  window.addEventListener('keyup', (event) => {
     if (event.repeat) return;
 
     switch (event.code) {
@@ -134,7 +148,9 @@ function updatePlayer(): void {
   // For some reason camera is facing -Z in default, so we need to fix it
   playerCamera.rotation.set(playerEuler.x, 180 * THREE.MathUtils.DEG2RAD, 0);
 
-  const nextQuaternion = new THREE.Quaternion().setFromEuler(new THREE.Euler(0, playerEuler.y, 0));
+  const nextQuaternion = new THREE.Quaternion().setFromEuler(
+    new THREE.Euler(0, playerEuler.y, 0),
+  );
   playerCollider.setRotation(nextQuaternion);
   playerGroup.quaternion.copy(nextQuaternion); // SYNC WITH THREE.JS
 
@@ -142,7 +158,11 @@ function updatePlayer(): void {
     playerInput.left - playerInput.right,
     0,
     playerInput.forward - playerInput.backward,
-  ).normalize().multiplyScalar(PLAYER_SPEED).applyQuaternion(nextQuaternion).multiplyScalar(deltaTimeS);
+  )
+    .normalize()
+    .multiplyScalar(PLAYER_SPEED)
+    .applyQuaternion(nextQuaternion)
+    .multiplyScalar(deltaTimeS);
 
   if (characterController.computedGrounded()) {
     groundedTimer = GROUNDED_TIMER_DEFAULT_VALUE;
@@ -162,19 +182,23 @@ function updatePlayer(): void {
   movementVector.setY(verticalMovement);
 
   verticalMovement = Math.max(
-    verticalMovement + (GRAVITY_VECTOR.y * GRAVITY_SCALE * deltaTimeS),
+    verticalMovement + GRAVITY_VECTOR.y * GRAVITY_SCALE * deltaTimeS,
     GRAVITY_VECTOR.y,
   );
 
   characterController.computeColliderMovement(playerCollider, movementVector);
 
   const currentPosition = toVector3(playerCollider.translation());
-  const computedMovementVector = toVector3(characterController.computedMovement());
+  const computedMovementVector = toVector3(
+    characterController.computedMovement(),
+  );
 
   const nextPosition = currentPosition.clone().add(computedMovementVector);
 
   playerCollider.setTranslation(nextPosition);
-  playerGroup.position.copy(nextPosition).sub(new THREE.Vector3(0, PLAYER_COLLIDER_HEIGHT / 2, 0)); // SYNC WITH THREE.JS
+  playerGroup.position
+    .copy(nextPosition)
+    .sub(new THREE.Vector3(0, PLAYER_COLLIDER_HEIGHT / 2, 0)); // SYNC WITH THREE.JS
 }
 
 createPlayer();

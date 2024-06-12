@@ -46,35 +46,55 @@ type Playground = {
   onUpdate: ((deltaTimeS: number) => void) | null;
   onPhysicsUpdate: ((deltaTimeS: number) => void) | null;
   onResize: (() => void) | null;
-}
+};
 
 let playground: Playground;
 
 export async function initPlayground(): Promise<Playground> {
-  const hdrMap = await new RGBELoader().loadAsync('/industrial_sunset_puresky_2k.hdr');
+  const hdrMap = await new RGBELoader().loadAsync(
+    '/industrial_sunset_puresky_2k.hdr',
+  );
   hdrMap.mapping = THREE.EquirectangularReflectionMapping;
   hdrMap.minFilter = THREE.LinearFilter;
   hdrMap.magFilter = THREE.LinearFilter;
   hdrMap.needsUpdate = true;
 
-  container = (function() {
+  container = (function () {
     const container = document.getElementById('container');
 
-    if (!container) throw new Error('Could not get element with id: "container"!');
+    if (!container)
+      throw new Error('Could not get element with id: "container"!');
 
     return container;
   })();
 
-
   pane = new Pane({ title: 'Debug' });
 
-  const rapierDebugVisibleBinding = pane.addBinding(params, 'rapierDebugVisible');
-  rapierDebugVisibleBinding.on('change', () => physicsWorldDebug.visible = params.rapierDebugVisible);
+  const rapierDebugVisibleBinding = pane.addBinding(
+    params,
+    'rapierDebugVisible',
+  );
+  rapierDebugVisibleBinding.on(
+    'change',
+    () => (physicsWorldDebug.visible = params.rapierDebugVisible),
+  );
 
-  const directionalLightHelperVisibleBinding = pane.addBinding(params, 'directionalLightHelperVisible');
-  directionalLightHelperVisibleBinding.on('change', () => directionalLightHelper.visible = params.directionalLightHelperVisible);
+  const directionalLightHelperVisibleBinding = pane.addBinding(
+    params,
+    'directionalLightHelperVisible',
+  );
+  directionalLightHelperVisibleBinding.on(
+    'change',
+    () =>
+      (directionalLightHelper.visible = params.directionalLightHelperVisible),
+  );
 
-  freeRoamCamera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 1, 100);
+  freeRoamCamera = new THREE.PerspectiveCamera(
+    75,
+    window.innerWidth / window.innerHeight,
+    1,
+    100,
+  );
   freeRoamCamera.position.set(0, 4, 10);
   freeRoamCamera.lookAt(0, 1, 0);
 
@@ -91,7 +111,7 @@ export async function initPlayground(): Promise<Playground> {
   scene.add(physicsWorldDebug);
 
   const level = (await new GLTFLoader().loadAsync('/level_1.glb')).scene;
-  level.traverse(object3D => {
+  level.traverse((object3D) => {
     if (object3D instanceof THREE.Mesh) {
       object3D.castShadow = true;
       object3D.receiveShadow = true;
@@ -100,7 +120,9 @@ export async function initPlayground(): Promise<Playground> {
       const indexes = object3D.geometry.index?.array;
 
       if (!indexes || !positionAttributes) {
-        console.warn(`Mesh "${object3D.name}" marked as a collider, but failed to retrieve position attributes or indices.`);
+        console.warn(
+          `Mesh "${object3D.name}" marked as a collider, but failed to retrieve position attributes or indices.`,
+        );
         return;
       }
 
@@ -109,8 +131,14 @@ export async function initPlayground(): Promise<Playground> {
         new Uint32Array(indexes),
       );
 
-      const object3DWorldPosition = object3D.getWorldPosition(new THREE.Vector3());
-      colliderDesc.setTranslation(object3DWorldPosition.x, object3DWorldPosition.y, object3DWorldPosition.z);
+      const object3DWorldPosition = object3D.getWorldPosition(
+        new THREE.Vector3(),
+      );
+      colliderDesc.setTranslation(
+        object3DWorldPosition.x,
+        object3DWorldPosition.y,
+        object3DWorldPosition.z,
+      );
       colliderDesc.setRotation(object3D.quaternion);
 
       physicsWorld.createCollider(colliderDesc);
@@ -190,7 +218,7 @@ function animate(timeMs: number): void {
   }
 
   const tickCounter = Math.ceil(
-    (timeMs - startTimeMs) / (1 / PHYSICS_UPDATE_PER_SECOND * 1000),
+    (timeMs - startTimeMs) / ((1 / PHYSICS_UPDATE_PER_SECOND) * 1000),
   );
 
   for (let tick = elapsedTickCounter; tick < tickCounter; tick++) {
@@ -230,8 +258,14 @@ function updateRapier(): void {
 
   const { vertices, colors } = physicsWorld.debugRender();
 
-  debugLineSegments.geometry.setAttribute('position', new THREE.BufferAttribute(vertices, 3));
-  debugLineSegments.geometry.setAttribute('color', new THREE.BufferAttribute(colors, 4));
+  debugLineSegments.geometry.setAttribute(
+    'position',
+    new THREE.BufferAttribute(vertices, 3),
+  );
+  debugLineSegments.geometry.setAttribute(
+    'color',
+    new THREE.BufferAttribute(colors, 4),
+  );
 }
 
 function updateThree(deltaTimeMs: number): void {
