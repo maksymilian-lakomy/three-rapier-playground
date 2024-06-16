@@ -1,11 +1,19 @@
 import * as THREE from 'three';
 import RAPIER from '@dimforge/rapier3d-compat';
-import { initPlayground } from './playground.ts';
 import { toVector3 } from './utils.ts';
 import { GRAVITY_VECTOR } from './gravity.ts';
+import { Playground } from './playground.ts';
+import { initAssets } from './assets.ts';
+import { RapierDebug } from './rapier-debug.ts';
 
 await RAPIER.init();
-const PLAYGROUND = await initPlayground();
+
+const assets = await initAssets();
+const playground = new Playground(assets);
+playground.loadLevel('level1');
+
+const rapierDebug = new RapierDebug(playground);
+rapierDebug.start();
 
 const playerInput = {
   forward: 0,
@@ -49,36 +57,36 @@ function createPlayer(): void {
 
   playerGroup.add(playerCamera);
 
-  PLAYGROUND.activeCamera = playerCamera;
-  PLAYGROUND.scene.add(playerGroup);
+  playground.activeCamera = playerCamera;
+  playground.scene.add(playerGroup);
 
   // RAPIER SETUP
   const colliderDesc = RAPIER.ColliderDesc.cylinder(
     PLAYER_COLLIDER_HEIGHT / 2,
     PLAYER_COLLIDER_RADIUS,
   );
-  colliderDesc.setTranslation(0, PLAYER_COLLIDER_HEIGHT / 2, 0);
+  colliderDesc.setTranslation(0, 10, 0);
 
-  playerCollider = PLAYGROUND.physicsWorld.createCollider(colliderDesc);
+  playerCollider = playground.physicsWorld.createCollider(colliderDesc);
 
   characterController =
-    PLAYGROUND.physicsWorld.createCharacterController(PLAYER_OFFSET);
+    playground.physicsWorld.createCharacterController(PLAYER_OFFSET);
   characterController.setMaxSlopeClimbAngle(5 * THREE.MathUtils.DEG2RAD);
   characterController.setApplyImpulsesToDynamicBodies(false);
   characterController.enableAutostep(0.25, 0.2, true);
   characterController.enableSnapToGround(0.25);
 
   // EVENTS SETUP
-  PLAYGROUND.canvas.addEventListener('click', () => {
-    if (PLAYGROUND.activeCamera !== playerCamera) return;
+  playground.canvas.addEventListener('click', () => {
+    if (playground.activeCamera !== playerCamera) return;
 
-    PLAYGROUND.canvas.requestPointerLock();
+    playground.canvas.requestPointerLock();
   });
 
-  PLAYGROUND.canvas.addEventListener('pointermove', (event) => {
+  playground.canvas.addEventListener('pointermove', (event) => {
     // Mention flipping sides
     playerEuler.x +=
-      (event.movementY / PLAYGROUND.canvas.clientHeight) *
+      (event.movementY / playground.canvas.clientHeight) *
       PLAYER_MOUSE_SENSITIVITY *
       THREE.MathUtils.DEG2RAD;
     playerEuler.x = THREE.MathUtils.clamp(
@@ -88,7 +96,7 @@ function createPlayer(): void {
     );
 
     playerEuler.y -=
-      (event.movementX / PLAYGROUND.canvas.clientWidth) *
+      (event.movementX / playground.canvas.clientWidth) *
       PLAYER_MOUSE_SENSITIVITY *
       THREE.MathUtils.DEG2RAD;
   });
@@ -202,4 +210,4 @@ function updatePlayer(): void {
 }
 
 createPlayer();
-PLAYGROUND.onPhysicsUpdate = updatePlayer;
+playground.onPhysicsUpdate.add(updatePlayer);

@@ -1,308 +1,285 @@
-import './style.css';
-
+import { Pane } from 'tweakpane';
 import * as THREE from 'three';
+import { OrbitControls } from 'three-stdlib';
 import RAPIER from '@dimforge/rapier3d-compat';
 import Stats from 'stats.js';
-import { GLTFLoader, OrbitControls, RGBELoader } from 'three-stdlib';
-import { Pane } from 'tweakpane';
-import { GRAVITY_VECTOR } from './gravity.ts';
+import { Assets } from './assets.ts';
+import { CONSTANTS } from './constants.ts';
 
-let container: HTMLElement;
+export class Playground {
+  public readonly onUpdate = new Set<(deltaTimeS: number) => void>();
+  public readonly onPhysicsUpdate = new Set<
+    (fixedDeltaTimeS: number) => void
+  >();
+  public readonly onResize = new Set<() => void>();
 
-let freeRoamCamera: THREE.PerspectiveCamera;
-let orbitControls: OrbitControls;
+  public readonly container: HTMLElement;
+  public readonly canvas: HTMLCanvasElement;
 
-let scene: THREE.Scene;
-let physicsWorldDebug: THREE.Group;
+  public readonly pane: Pane;
+  public readonly stats: Stats;
 
-let physicsWorld: RAPIER.World;
-let renderer: THREE.WebGLRenderer;
-let stats: Stats;
+  public readonly freeRoamCamera: THREE.PerspectiveCamera;
+  public readonly orbitControls: OrbitControls;
 
-let directionalLightHelper: THREE.DirectionalLightHelper;
+  public readonly scene: THREE.Scene;
+  public readonly directionalLight: THREE.DirectionalLight;
 
-let pane: Pane;
+  public readonly physicsWorld: RAPIER.World;
 
-const params = {
-  directionalLightHelperVisible: false,
-  rapierDebugVisible: false,
-};
+  public readonly renderer: THREE.WebGLRenderer;
 
-let animationId: number | null = null;
+  public get activeCamera(): THREE.PerspectiveCamera {
+    return this._activeCamera;
+  }
 
-export const PHYSICS_UPDATE_PER_SECOND = 60;
+  public set activeCamera(camera: THREE.PerspectiveCamera) {
+    this._activeCamera = camera;
+  }
 
-type Playground = {
-  pane: Pane;
+  private animationId: number | null = null;
+  private startTimeMs: number | null = null;
+  private elapsedTimeMs: number | null = null;
+  private elapsedTickCounter: number | null = null;
 
-  container: HTMLElement;
-  canvas: HTMLCanvasElement;
+  private _activeCamera: THREE.PerspectiveCamera;
 
-  activeCamera: THREE.PerspectiveCamera;
+  constructor(private readonly assets: Assets) {
+    this.container = this.getContainer();
+    this.pane = this.createPane();
+    this.stats = this.createStats();
+    this.container.appendChild(this.stats.dom);
 
-  scene: THREE.Scene;
-  physicsWorld: RAPIER.World;
+    this._activeCamera = this.freeRoamCamera = this.createFreeRoamCamera();
 
-  onUpdate: ((deltaTimeS: number) => void) | null;
-  onPhysicsUpdate: ((deltaTimeS: number) => void) | null;
-  onResize: (() => void) | null;
-};
+    this.scene = this.createScene();
+    this.physicsWorld = this.createPhysicsWorld();
 
-let playground: Playground;
+    this.directionalLight = this.createDirectionalLight();
 
-export async function initPlayground(): Promise<Playground> {
-  const hdrMap = await new RGBELoader().loadAsync(
-    '/industrial_sunset_puresky_2k.hdr',
-  );
-  hdrMap.mapping = THREE.EquirectangularReflectionMapping;
-  hdrMap.minFilter = THREE.LinearFilter;
-  hdrMap.magFilter = THREE.LinearFilter;
-  hdrMap.needsUpdate = true;
+    this.scene.add(this.directionalLight);
 
-  container = (function () {
+    this.renderer = this.createRenderer();
+    this.canvas = this.renderer.domElement;
+    this.container.appendChild(this.canvas);
+
+    this.orbitControls = this.createOrbitControls();
+
+    this.animationId = requestAnimationFrame(this.updateLoop.bind(this));
+
+    window.addEventListener('resize', this.onWindowResize.bind(this));
+
+    document.addEventListener(
+      'visibilitychange',
+      this.onDocumentVisibilityChange.bind(this),
+    );
+  }
+
+  public loadLevel(name: string): void {
+    const gltf = this.assets.gltf.get(name);
+    if (!gltf) return;
+
+    const level = gltf.scene;
+
+    level.traverse((it) => {
+      if (it instanceof THREE.Mesh) {
+        it.castShadow = true;
+        it.receiveShadow = true;
+
+        const positionAttributes = it.geometry.attributes['position'].array;
+        const indexes = it.geometry.index?.array;
+
+        if (!indexes || !positionAttributes) {
+          console.warn(
+            `Mesh "${it.name}" marked as a collider, but failed to retrieve position attributes or indices.`,
+          );
+          return;
+        }
+
+        const colliderDesc = RAPIER.ColliderDesc.trimesh(
+          positionAttributes,
+          new Uint32Array(indexes),
+        );
+
+        const object3DWorldPosition = it.getWorldPosition(new THREE.Vector3());
+        colliderDesc.setTranslation(
+          object3DWorldPosition.x,
+          object3DWorldPosition.y,
+          object3DWorldPosition.z,
+        );
+        colliderDesc.setRotation(it.quaternion);
+
+        console.log('collider', colliderDesc);
+
+        this.physicsWorld.createCollider(colliderDesc);
+      }
+    });
+
+    this.scene.add(level);
+  }
+
+  private updateLoop(timeMs: number): void {
+    this.stats.begin();
+
+    if (this.startTimeMs === null) {
+      this.startTimeMs = timeMs;
+    }
+
+    if (this.elapsedTickCounter === null) {
+      this.elapsedTickCounter = 0;
+    }
+
+    const fixedDeltaTimeMs = (1 / CONSTANTS.PHYSICS_UPDATE_PER_SECOND) * 1000;
+
+    const tickCounter = Math.ceil(
+      (timeMs - this.startTimeMs) / fixedDeltaTimeMs,
+    );
+
+    for (let tick = this.elapsedTickCounter; tick < tickCounter; tick++) {
+      this.physicsWorldUpdateLoop(fixedDeltaTimeMs);
+    }
+
+    if (this.elapsedTimeMs === null) {
+      this.elapsedTimeMs = 0;
+    }
+
+    const deltaTimeMs = timeMs - this.elapsedTimeMs;
+    this.sceneUpdateLoop(deltaTimeMs);
+
+    this.stats.end();
+
+    this.elapsedTickCounter = tickCounter;
+    this.elapsedTimeMs = timeMs;
+    this.animationId = requestAnimationFrame(this.updateLoop.bind(this));
+  }
+
+  private sceneUpdateLoop(deltaTimeMs: number): void {
+    const deltaTimeS = deltaTimeMs / 1000;
+
+    this.orbitControls.update();
+
+    this.onUpdate.forEach((callback) => callback(deltaTimeS));
+
+    this.renderer.render(this.scene, this.activeCamera);
+  }
+
+  private physicsWorldUpdateLoop(fixedDeltaTimeMs: number): void {
+    const fixedDeltaTimeS = fixedDeltaTimeMs / 1000;
+
+    this.onPhysicsUpdate.forEach((callback) => callback(fixedDeltaTimeS));
+
+    this.physicsWorld.step();
+  }
+
+  private getContainer(): HTMLElement {
     const container = document.getElementById('container');
 
     if (!container)
       throw new Error('Could not get element with id: "container"!');
 
     return container;
-  })();
+  }
 
-  pane = new Pane({ title: 'Debug' });
+  private createPane(): Pane {
+    return new Pane({ title: 'Playground - Debug' });
+  }
 
-  const rapierDebugVisibleBinding = pane.addBinding(
-    params,
-    'rapierDebugVisible',
-  );
-  rapierDebugVisibleBinding.on(
-    'change',
-    () => (physicsWorldDebug.visible = params.rapierDebugVisible),
-  );
+  private createFreeRoamCamera(): THREE.PerspectiveCamera {
+    const camera = new THREE.PerspectiveCamera(
+      75,
+      window.innerWidth / window.innerHeight,
+      1,
+      100,
+    );
+    camera.position.set(0, 4, 10);
+    camera.lookAt(0, 1, 0);
 
-  const directionalLightHelperVisibleBinding = pane.addBinding(
-    params,
-    'directionalLightHelperVisible',
-  );
-  directionalLightHelperVisibleBinding.on(
-    'change',
-    () =>
-      (directionalLightHelper.visible = params.directionalLightHelperVisible),
-  );
+    return camera;
+  }
 
-  freeRoamCamera = new THREE.PerspectiveCamera(
-    75,
-    window.innerWidth / window.innerHeight,
-    1,
-    100,
-  );
-  freeRoamCamera.position.set(0, 4, 10);
-  freeRoamCamera.lookAt(0, 1, 0);
+  private createOrbitControls(): OrbitControls {
+    const orbitControls = new OrbitControls(
+      this.freeRoamCamera,
+      this.renderer.domElement,
+    );
+    orbitControls.minDistance = 10;
+    orbitControls.maxDistance = 75;
+    orbitControls.enableDamping = true;
 
-  scene = new THREE.Scene();
-  scene.background = hdrMap;
-  scene.backgroundBlurriness = 0.1;
-  scene.environment = hdrMap;
+    return orbitControls;
+  }
 
-  physicsWorld = new RAPIER.World(GRAVITY_VECTOR);
-  physicsWorld.timestep = 1 / PHYSICS_UPDATE_PER_SECOND;
+  private createScene(): THREE.Scene {
+    const scene = new THREE.Scene();
 
-  physicsWorldDebug = new THREE.Group();
-  physicsWorldDebug.visible = params.rapierDebugVisible;
-  scene.add(physicsWorldDebug);
+    const hdrMap = this.assets.dataTexture.get('hdr')!;
 
-  const level = (await new GLTFLoader().loadAsync('/level_1.glb')).scene;
-  level.traverse((object3D) => {
-    if (object3D instanceof THREE.Mesh) {
-      object3D.castShadow = true;
-      object3D.receiveShadow = true;
+    hdrMap.mapping = THREE.EquirectangularReflectionMapping;
+    hdrMap.minFilter = THREE.LinearFilter;
+    hdrMap.magFilter = THREE.LinearFilter;
+    hdrMap.needsUpdate = true;
 
-      const positionAttributes = object3D.geometry.attributes['position'].array;
-      const indexes = object3D.geometry.index?.array;
+    scene.background = hdrMap;
+    scene.backgroundBlurriness = 0.1;
+    scene.environment = hdrMap;
 
-      if (!indexes || !positionAttributes) {
-        console.warn(
-          `Mesh "${object3D.name}" marked as a collider, but failed to retrieve position attributes or indices.`,
-        );
-        return;
-      }
+    return scene;
+  }
 
-      const colliderDesc = RAPIER.ColliderDesc.trimesh(
-        positionAttributes,
-        new Uint32Array(indexes),
-      );
+  private createPhysicsWorld(): RAPIER.World {
+    const physicsWorld = new RAPIER.World({ x: 0, y: CONSTANTS.GRAVITY, z: 0 });
+    physicsWorld.timestep = 1 / CONSTANTS.PHYSICS_UPDATE_PER_SECOND;
 
-      const object3DWorldPosition = object3D.getWorldPosition(
-        new THREE.Vector3(),
-      );
-      colliderDesc.setTranslation(
-        object3DWorldPosition.x,
-        object3DWorldPosition.y,
-        object3DWorldPosition.z,
-      );
-      colliderDesc.setRotation(object3D.quaternion);
+    return physicsWorld;
+  }
 
-      physicsWorld.createCollider(colliderDesc);
+  private createDirectionalLight(): THREE.DirectionalLight {
+    const directionalLight = new THREE.DirectionalLight(0xffffff, 1);
+    directionalLight.position.set(10, 10, 10);
+    directionalLight.castShadow = true;
+    directionalLight.shadow.camera.top = 128;
+    directionalLight.shadow.camera.bottom = -128;
+    directionalLight.shadow.camera.left = -128;
+    directionalLight.shadow.camera.right = 128;
+    directionalLight.shadow.camera.near = 0.1;
+    directionalLight.shadow.camera.far = 1000;
+
+    directionalLight.shadow.mapSize.width = 2048;
+    directionalLight.shadow.mapSize.height = 2048;
+
+    return directionalLight;
+  }
+
+  private createRenderer(): THREE.WebGLRenderer {
+    const renderer = new THREE.WebGLRenderer({ antialias: true });
+    renderer.setPixelRatio(window.devicePixelRatio);
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    renderer.shadowMap.enabled = true;
+    renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    renderer.toneMapping = THREE.ACESFilmicToneMapping;
+
+    return renderer;
+  }
+
+  private createStats(): Stats {
+    return new Stats();
+  }
+
+  private onWindowResize(): void {
+    this.onResize.forEach((callback) => callback.bind(this));
+  }
+
+  private onDocumentVisibilityChange(): void {
+    if (document.hidden && this.animationId !== null) {
+      cancelAnimationFrame(this.animationId);
+      this.animationId = null;
+      this.startTimeMs = null;
+      this.elapsedTimeMs = null;
+      this.elapsedTickCounter = null;
+      console.log('Update loop paused');
+    } else {
+      this.animationId = requestAnimationFrame(this.updateLoop.bind(this));
+      console.log('Update loop resumed');
     }
-  });
-
-  scene.add(level);
-
-  const directionalLight = new THREE.DirectionalLight(0xffffff, 1);
-  directionalLight.position.set(10, 10, 10);
-  directionalLight.castShadow = true;
-  directionalLight.shadow.camera.top = 128;
-  directionalLight.shadow.camera.bottom = -128;
-  directionalLight.shadow.camera.left = -128;
-  directionalLight.shadow.camera.right = 128;
-  directionalLight.shadow.camera.near = 0.1;
-  directionalLight.shadow.camera.far = 1000;
-
-  directionalLight.shadow.mapSize.width = 2048;
-  directionalLight.shadow.mapSize.height = 2048;
-
-  scene.add(directionalLight);
-
-  directionalLightHelper = new THREE.DirectionalLightHelper(directionalLight);
-  directionalLightHelper.visible = params.directionalLightHelperVisible;
-  scene.add(directionalLightHelper);
-
-  const axesHelper = new THREE.AxesHelper(2);
-  scene.add(axesHelper);
-
-  renderer = new THREE.WebGLRenderer({ antialias: true });
-  renderer.setPixelRatio(window.devicePixelRatio);
-  renderer.setSize(window.innerWidth, window.innerHeight);
-  renderer.shadowMap.enabled = true;
-  renderer.shadowMap.type = THREE.PCFSoftShadowMap;
-  renderer.toneMapping = THREE.ACESFilmicToneMapping;
-
-  container.appendChild(renderer.domElement);
-
-  orbitControls = new OrbitControls(freeRoamCamera, renderer.domElement);
-  orbitControls.minDistance = 10;
-  orbitControls.maxDistance = 75;
-  orbitControls.enableDamping = true;
-
-  stats = new Stats();
-  container.appendChild(stats.dom);
-
-  window.addEventListener('resize', onWindowResize);
-  document.addEventListener('visibilitychange', onDocumentVisibilityChange);
-
-  animationId = requestAnimationFrame(animate);
-
-  playground = {
-    pane,
-    container,
-    canvas: renderer.domElement,
-    activeCamera: freeRoamCamera,
-    scene,
-    physicsWorld,
-    onUpdate: null,
-    onPhysicsUpdate: null,
-    onResize: null,
-  };
-
-  return playground;
-}
-
-let startTimeMs: number | null = null;
-let elapsedTimeMs: number | null = null;
-let elapsedTickCounter: number = 0;
-
-function animate(timeMs: number): void {
-  stats.begin();
-
-  if (startTimeMs === null) {
-    startTimeMs = timeMs;
   }
-
-  const tickCounter = Math.ceil(
-    (timeMs - startTimeMs) / ((1 / PHYSICS_UPDATE_PER_SECOND) * 1000),
-  );
-
-  for (let tick = elapsedTickCounter; tick < tickCounter; tick++) {
-    updateRapier();
-  }
-
-  const deltaTimeMs = elapsedTimeMs !== null ? timeMs - elapsedTimeMs : 0;
-  updateThree(deltaTimeMs);
-
-  stats.end();
-
-  elapsedTickCounter = tickCounter;
-  elapsedTimeMs = timeMs;
-  animationId = requestAnimationFrame(animate);
-}
-
-let debugLineSegments: THREE.LineSegments;
-
-function updateRapier(): void {
-  physicsWorld.step();
-
-  if (playground.onPhysicsUpdate) {
-    playground.onPhysicsUpdate(1 / PHYSICS_UPDATE_PER_SECOND);
-  }
-
-  if (!debugLineSegments) {
-    const material = new THREE.LineBasicMaterial({
-      color: 0xffffff,
-      vertexColors: true,
-    });
-
-    const geometry = new THREE.BufferGeometry();
-
-    debugLineSegments = new THREE.LineSegments(geometry, material);
-    physicsWorldDebug.add(debugLineSegments);
-  }
-
-  const { vertices, colors } = physicsWorld.debugRender();
-
-  debugLineSegments.geometry.setAttribute(
-    'position',
-    new THREE.BufferAttribute(vertices, 3),
-  );
-  debugLineSegments.geometry.setAttribute(
-    'color',
-    new THREE.BufferAttribute(colors, 4),
-  );
-}
-
-function updateThree(deltaTimeMs: number): void {
-  orbitControls.update();
-
-  if (playground.onUpdate) {
-    playground.onUpdate(deltaTimeMs / 1000);
-  }
-
-  renderer.render(scene, playground.activeCamera);
-}
-
-function clearAnimationAndTimings(): void {
-  animationId = null;
-  startTimeMs = null;
-  elapsedTimeMs = null;
-  elapsedTickCounter = 0;
-}
-
-function onDocumentVisibilityChange(): void {
-  if (document.hidden && animationId !== null) {
-    cancelAnimationFrame(animationId);
-    clearAnimationAndTimings();
-    console.log('Animation paused');
-  } else {
-    animationId = requestAnimationFrame(animate);
-    console.log('Animation resumed');
-  }
-}
-
-function onWindowResize(): void {
-  freeRoamCamera.aspect = window.innerWidth / window.innerHeight;
-  freeRoamCamera.updateProjectionMatrix();
-
-  if (playground.onResize) {
-    playground.onResize();
-  }
-
-  renderer.setSize(window.innerWidth, window.innerHeight);
 }

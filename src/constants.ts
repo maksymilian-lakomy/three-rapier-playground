@@ -1,0 +1,4 @@
+export const CONSTANTS = {
+  GRAVITY: -9.81,
+  PHYSICS_UPDATE_PER_SECOND: 60,
+};
